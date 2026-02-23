@@ -43,6 +43,7 @@ with st.sidebar:
 @st.cache_data(ttl=3600)
 def load_data(ticker):
     try:
+        # Fetch OHLC data for professional charts
         df = yf.download(ticker, period="10y")
         if df.empty: return None
         # Handle MultiIndex columns that yfinance sometimes returns
@@ -50,7 +51,7 @@ def load_data(ticker):
             df.columns = df.columns.get_level_values(0)
         df.reset_index(inplace=True)
         return df
-    except Exception as e:
+    except Exception:
         return None
 
 def get_model_path(ticker, model_type):
@@ -82,30 +83,43 @@ def get_sentiment(ticker_symbol, api_key):
 if ticker_input:
     df = load_data(ticker_input)
     if df is not None:
-        # Strict scalar extraction for basic price metrics
-        df_clean = df[['Date', 'Close']].dropna()
-        today_price = float(df_clean['Close'].iloc[-1])
+        # Extract Close for metrics/predictions
+        today_price = float(df['Close'].iloc[-1])
         
         if page == "📊 Dashboard":
-            st.title(f"📈 {ticker_input} Market Pulse")
+            st.title(f"📈 {ticker_input} Trading View")
             
             # Graph Controls
-            period_options = {"1M": 30, "6M": 180, "1Y": 365, "5Y": 1825, "MAX": len(df_clean)}
-            selected_period = st.select_slider("Select Graph Period", options=list(period_options.keys()), value="1Y")
+            period_options = {"1M": 22, "6M": 126, "1Y": 252, "5Y": 1260, "MAX": len(df)}
+            selected_period = st.select_slider("Timeframe", options=list(period_options.keys()), value="1Y")
             
-            # Filter Data based on period
+            # Filter Data
             days = period_options[selected_period]
-            plot_df = df_clean.tail(days)
+            plot_df = df.tail(days)
             
-            fig = go.Figure(go.Scatter(x=plot_df['Date'], y=plot_df['Close'], line=dict(color='#00d1ff')))
-            fig.update_layout(template="plotly_dark", height=450, margin=dict(l=0, r=0, t=20, b=0))
+            # Candlestick Chart
+            fig = go.Figure(data=[go.Candlestick(
+                x=plot_df['Date'],
+                open=plot_df['Open'],
+                high=plot_df['High'],
+                low=plot_df['Low'],
+                close=plot_df['Close'],
+                name="Market Price"
+            )])
+            
+            fig.update_layout(
+                template="plotly_dark",
+                height=500,
+                xaxis_rangeslider_visible=False, # Disable for cleaner look
+                margin=dict(l=0, r=0, t=10, b=0)
+            )
             st.plotly_chart(fig, use_container_width=True)
             
             c1, c2, c3 = st.columns(3)
-            # Use .item() and float() to guarantee scalars
+            # Robust Metrics
             c1.metric("Current", f"₹{float(today_price):.2f}")
-            c2.metric("1Y High", f"₹{float(df_clean['Close'].tail(252).max()):.2f}")
-            c3.metric("1Y Low", f"₹{float(df_clean['Close'].tail(252).min()):.2f}")
+            c2.metric("1Y High", f"₹{float(df['Close'].tail(252).max()):.2f}")
+            c3.metric("1Y Low", f"₹{float(df['Close'].tail(252).min()):.2f}")
 
         elif page == "🧠 AI Conclusion":
             st.title("🧠 Intelligence Hub")
@@ -113,7 +127,7 @@ if ticker_input:
             with st.spinner("Processing deep analysis..."):
                 # Prediction Logic
                 scaler = MinMaxScaler()
-                close_data = df_clean[['Close']].values
+                close_data = df[['Close']].values
                 scaled = scaler.fit_transform(close_data)
                 
                 X_train = []
@@ -140,8 +154,8 @@ if ticker_input:
                     m_gru.fit(X_train, y_train, epochs=2, verbose=0)
                     m_gru.save(gru_path)
 
-                p_lstm = float(scaler.inverse_transform(m_lstm.predict(last_60))[0][0])
-                p_gru = float(scaler.inverse_transform(m_gru.predict(last_60))[0][0])
+                p_lstm = float(scaler.inverse_transform(m_lstm.predict(last_60, verbose=0))[0][0])
+                p_gru = float(scaler.inverse_transform(m_gru.predict(last_60, verbose=0))[0][0])
                 sentiment = get_sentiment(ticker_input, st.session_state.groq_key) if st.session_state.groq_key else "N/A"
 
             col1, col2, col3 = st.columns(3)
