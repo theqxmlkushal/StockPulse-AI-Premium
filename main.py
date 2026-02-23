@@ -109,9 +109,9 @@ if ticker_input:
             st.plotly_chart(fig, use_container_width=True)
             
             col1, col2, col3 = st.columns(3)
-            col1.metric("Current Price", f"₹{today_price:.2f}")
-            col2.metric("1Y High", f"₹{df_clean['Close'].tail(252).max():.2f}")
-            col3.metric("1Y Low", f"₹{df_clean['Close'].tail(252).min():.2f}")
+            col1.metric("Current Price", f"₹{float(today_price):.2f}")
+            col2.metric("1Y High", f"₹{float(df_clean['Close'].tail(252).max()):.2f}")
+            col3.metric("1Y Low", f"₹{float(df_clean['Close'].tail(252).min()):.2f}")
 
         with tab2:
             st.subheader("Deep Learning Forecasts")
