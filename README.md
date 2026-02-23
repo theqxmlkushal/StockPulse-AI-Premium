@@ -2,6 +2,8 @@
 
 An elite Streamlit-based stock analysis dashboard featuring deep learning forecasts and AI-powered financial advisory.
 
+## 🪽 Deloyed App Link - https://thequantxstockmarketpredictor.streamlit.app/
+
 ## ✨ Premium Features
 - **Glassmorphic UI**: High-end dark theme with interactive Plotly visualizations.
 - **Deep Learning Forecasts**: Advanced LSTM and GRU models for price projection.
