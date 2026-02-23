@@ -110,8 +110,8 @@ if ticker_input:
             
             col1, col2, col3 = st.columns(3)
             col1.metric("Current Price", f"₹{float(today_price):.2f}")
-            col2.metric("1Y High", f"₹{float(df_clean['Close'].tail(252).max()):.2f}")
-            col3.metric("1Y Low", f"₹{float(df_clean['Close'].tail(252).min()):.2f}")
+            col2.metric("1Y High", f"₹{float(df_clean['Close'].tail(252).max().item()):.2f}")
+            col3.metric("1Y Low", f"₹{float(df_clean['Close'].tail(252).min().item()):.2f}")
 
         with tab2:
             st.subheader("Deep Learning Forecasts")
@@ -178,7 +178,7 @@ if ticker_input:
                         
                         chat_completion = client.chat.completions.create(
                             messages=[{"role": "user", "content": prompt}],
-                            model="llama3-8b-8192",
+                            model="llama-3.1-8b-instant",
                         )
                         st.markdown(chat_completion.choices[0].message.content)
                     except Exception as e:
@@ -191,7 +191,8 @@ if ticker_input:
         st.error("Invalid Ticker or No Data Found. Please try another symbol.")
 else:
     st.title("Welcome to StockPulse AI")
-    st.image("https://images.unsplash.com/photo-1611974717482-58-f996d924c13a?auto=format&fit=crop&q=80&w=1000", use_container_width=True)
+    st.markdown("---")
+    st.success("✨ Systems Online | AI Model: Llama-3.1-8b")
     st.markdown("### Enter a ticker in the sidebar to begin your premium analysis.")
 
 
