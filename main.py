@@ -8,6 +8,7 @@ from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import GRU, LSTM, Dense, Dropout
 import os
 from groq import Groq
+from datetime import datetime, timedelta
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="StockPulse AI v3", layout="wide", initial_sidebar_state="expanded")
@@ -43,8 +44,14 @@ with st.sidebar:
 def load_data(ticker):
     try:
         df = yf.download(ticker, period="10y")
-        return df if not df.empty else None
-    except: return None
+        if df.empty: return None
+        # Handle MultiIndex columns that yfinance sometimes returns
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df.reset_index(inplace=True)
+        return df
+    except Exception as e:
+        return None
 
 def get_model_path(ticker, model_type):
     if not os.path.exists("models"): os.makedirs("models")
@@ -75,19 +82,30 @@ def get_sentiment(ticker_symbol, api_key):
 if ticker_input:
     df = load_data(ticker_input)
     if df is not None:
-        df_clean = df[['Close']].dropna()
+        # Strict scalar extraction for basic price metrics
+        df_clean = df[['Date', 'Close']].dropna()
         today_price = float(df_clean['Close'].iloc[-1])
         
         if page == "📊 Dashboard":
             st.title(f"📈 {ticker_input} Market Pulse")
-            fig = go.Figure(go.Scatter(x=df_clean.index, y=df_clean['Close'], line=dict(color='#00d1ff')))
-            fig.update_layout(template="plotly_dark", height=500, margin=dict(l=0, r=0, t=20, b=0))
+            
+            # Graph Controls
+            period_options = {"1M": 30, "6M": 180, "1Y": 365, "5Y": 1825, "MAX": len(df_clean)}
+            selected_period = st.select_slider("Select Graph Period", options=list(period_options.keys()), value="1Y")
+            
+            # Filter Data based on period
+            days = period_options[selected_period]
+            plot_df = df_clean.tail(days)
+            
+            fig = go.Figure(go.Scatter(x=plot_df['Date'], y=plot_df['Close'], line=dict(color='#00d1ff')))
+            fig.update_layout(template="plotly_dark", height=450, margin=dict(l=0, r=0, t=20, b=0))
             st.plotly_chart(fig, use_container_width=True)
             
             c1, c2, c3 = st.columns(3)
-            c1.metric("Current", f"₹{today_price:.2f}")
-            c2.metric("1Y High", f"₹{float(df_clean['Close'].tail(252).max().item()):.2f}")
-            c3.metric("1Y Low", f"₹{float(df_clean['Close'].tail(252).min().item()):.2f}")
+            # Use .item() and float() to guarantee scalars
+            c1.metric("Current", f"₹{float(today_price):.2f}")
+            c2.metric("1Y High", f"₹{float(df_clean['Close'].tail(252).max()):.2f}")
+            c3.metric("1Y Low", f"₹{float(df_clean['Close'].tail(252).min()):.2f}")
 
         elif page == "🧠 AI Conclusion":
             st.title("🧠 Intelligence Hub")
@@ -95,7 +113,9 @@ if ticker_input:
             with st.spinner("Processing deep analysis..."):
                 # Prediction Logic
                 scaler = MinMaxScaler()
-                scaled = scaler.fit_transform(df_clean.values)
+                close_data = df_clean[['Close']].values
+                scaled = scaler.fit_transform(close_data)
+                
                 X_train = []
                 for i in range(60, len(scaled)): X_train.append(scaled[i-60:i, 0])
                 X_train = np.array(X_train).reshape(-1, 60, 1)
