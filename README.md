@@ -7,7 +7,6 @@ An elite Streamlit-based stock analysis dashboard featuring deep learning foreca
 - **Deep Learning Forecasts**: Advanced LSTM and GRU models for price projection.
 - **AI Advisor (Groq)**: Real-time investment thesis generation using Llama 3 LLM.
 - **Ultra-Low Latency**: Automated model persistence saves trained models to disk, skipping future training for the same ticker.
-- **Zerodha Integration**: Direct kiteconnect link for production trading.
 
 ## 🛠️ Setup & Deployment
 

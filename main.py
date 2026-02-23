@@ -59,8 +59,6 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🔑 API Configuration")
     groq_api_key = st.text_input("Groq API Key", value=st.session_state.groq_key, type="password")
-    kite_api_key = st.text_input("Zerodha Key")
-    kite_api_secret = st.text_input("Zerodha Secret", type="password")
     
     st.markdown("---")
     st.info("💡 Tip: Use `.NS` suffix for National Stock Exchange (India) tickers.")
@@ -99,7 +97,7 @@ if ticker_input:
         today_price = float(df_clean['Close'].iloc[-1])
         
         # Tabs Layout
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🔮 Predictions", "🤖 AI Insights", "💰 Trading"])
+        tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔮 Predictions", "🤖 AI Insights"])
         
         with tab1:
             st.title(f"📈 {ticker_input.upper()} Market Pulse")
@@ -188,14 +186,6 @@ if ticker_input:
             else:
                 st.warning("Please enter your Groq API Key in the sidebar.")
 
-        with tab4:
-            st.subheader("Zerodha Integration")
-            if kite_api_key:
-                st.success("API Keys detected. Production authentication required.")
-                login_url = f"https://kite.zerodha.com/connect/login?v=3&api_key={kite_api_key}"
-                st.markdown(f"[🔐 Proceed to Zerodha Login]({login_url})")
-            else:
-                st.info("Enter Zerodha credentials in the sidebar to enable trading.")
 
     else:
         st.error("Invalid Ticker or No Data Found. Please try another symbol.")
