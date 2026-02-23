@@ -43,15 +43,36 @@ with st.sidebar:
 @st.cache_data(ttl=3600)
 def load_data(ticker):
     try:
-        # Fetch OHLC data for professional charts
-        df = yf.download(ticker, period="10y")
+        # Use Ticker.history for single tickers as it's more stable in some environments
+        t = yf.Ticker(ticker)
+        df = t.history(period="10y")
+        
+        # Fallback if history is empty
+        if df.empty:
+            df = yf.download(ticker, period="10y", progress=False)
+            
         if df.empty: return None
-        # Handle MultiIndex columns that yfinance sometimes returns
+        
+        # Robust column flattening
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
+            
         df.reset_index(inplace=True)
+        
+        # Standardize column casing
+        df.columns = [str(c).title() for c in df.columns]
+        
+        # Ensure we have common naming for Date
+        if 'Date' not in df.columns:
+            # Check for common variants
+            for col in df.columns:
+                if col.lower() in ['date', 'datetime', 'index']:
+                    df.rename(columns={col: 'Date'}, inplace=True)
+                    break
+        
         return df
-    except Exception:
+    except Exception as e:
+        # Silently fail but we could return None
         return None
 
 def get_model_path(ticker, model_type):
@@ -83,9 +104,14 @@ def get_sentiment(ticker_symbol, api_key):
 if ticker_input:
     df = load_data(ticker_input)
     if df is not None:
-        # Extract Close for metrics/predictions
-        today_price = float(df['Close'].iloc[-1])
-        
+        # Robust scalar extraction
+        try:
+            price_series = df['Close']
+            today_price = float(price_series.iloc[-1].item() if hasattr(price_series.iloc[-1], 'item') else price_series.iloc[-1])
+        except Exception:
+            st.error("Data error encountered.")
+            st.stop()
+            
         if page == "📊 Dashboard":
             st.title(f"📈 {ticker_input} Trading View")
             
@@ -110,16 +136,22 @@ if ticker_input:
             fig.update_layout(
                 template="plotly_dark",
                 height=500,
-                xaxis_rangeslider_visible=False, # Disable for cleaner look
+                xaxis_rangeslider_visible=False,
                 margin=dict(l=0, r=0, t=10, b=0)
             )
             st.plotly_chart(fig, use_container_width=True)
             
             c1, c2, c3 = st.columns(3)
-            # Robust Metrics
-            c1.metric("Current", f"₹{float(today_price):.2f}")
-            c2.metric("1Y High", f"₹{float(df['Close'].tail(252).max()):.2f}")
-            c3.metric("1Y Low", f"₹{float(df['Close'].tail(252).min()):.2f}")
+            # Safe metrics
+            c1.metric("Current", f"₹{today_price:.2f}")
+            
+            high_1y = df['Close'].tail(252).max()
+            if hasattr(high_1y, 'item'): high_1y = high_1y.item()
+            c2.metric("1Y High", f"₹{float(high_1y):.2f}")
+            
+            low_1y = df['Close'].tail(252).min()
+            if hasattr(low_1y, 'item'): low_1y = low_1y.item()
+            c3.metric("1Y Low", f"₹{float(low_1y):.2f}")
 
         elif page == "🧠 AI Conclusion":
             st.title("🧠 Intelligence Hub")
@@ -173,6 +205,6 @@ if ticker_input:
             else:
                 st.warning("Please configure Groq Key in sidebar.")
 
-    else: st.error("Invalid Ticker.")
+    else: st.error("Invalid Ticker. Please check the symbol (e.g., TSLA, INFY.NS).")
 else:
     st.info("👈 Enter a ticker symbol in the sidebar to begin.")
