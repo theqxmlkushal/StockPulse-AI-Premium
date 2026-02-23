@@ -3,47 +3,20 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import GRU, LSTM, Dense, Dropout
-from datetime import datetime, timedelta
 import os
-import json
 from groq import Groq
 
 # --- CONFIG & STYLING ---
-st.set_page_config(page_title="StockPulse AI | Premium Trader", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="StockPulse AI v3", layout="wide", initial_sidebar_state="expanded")
 
-# Custom CSS for Premium Look
 st.markdown("""
     <style>
-    .main {
-        background-color: #0e1117;
-    }
-    .stMetric {
-        background: rgba(255, 255, 255, 0.05);
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: transparent;
-        border-radius: 4px 4px 0px 0px;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: rgba(255, 255, 255, 0.05);
-        border-bottom: 2px solid #ff4b4b;
-    }
+    .main { background-color: #0e1117; }
+    .stMetric { background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1); }
+    .stRadio [data-baseweb="radio"] { padding: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -53,146 +26,119 @@ if "groq_key" not in st.session_state:
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("🚀 StockPulse AI")
+    st.title("🚀 StockPulse AI v3")
     st.markdown("---")
-    ticker_input = st.text_input("Ticker Symbol", value="AAPL", help="e.g. AAPL, TSLA, INFY.NS")
+    ticker_input = st.text_input("Ticker Symbol", value="AAPL").upper()
+    page = st.radio("Navigation", ["📊 Dashboard", "🧠 AI Conclusion"])
     st.markdown("---")
     st.subheader("🔑 API Configuration")
     groq_api_key = st.text_input("Groq API Key", value=st.session_state.groq_key, type="password")
-    
+    if groq_api_key:
+        st.session_state.groq_key = groq_api_key
     st.markdown("---")
-    st.info("💡 Tip: Use `.NS` suffix for National Stock Exchange (India) tickers.")
+    st.info("✨ Systems Online | AI Model: Llama-3.1-8b")
 
 # --- HELPERS ---
 @st.cache_data(ttl=3600)
 def load_data(ticker):
     try:
-        df = yf.download(ticker, period="15y")
-        if df.empty: return None
-        df.reset_index(inplace=True)
-        return df
-    except Exception:
-        return None
+        df = yf.download(ticker, period="10y")
+        return df if not df.empty else None
+    except: return None
 
 def get_model_path(ticker, model_type):
-    if not os.path.exists("models"):
-        os.makedirs("models")
+    if not os.path.exists("models"): os.makedirs("models")
     return f"models/{ticker}_{model_type}.keras"
 
-def create_sequences(data, look_back):
-    X, y = [], []
-    for i in range(look_back, len(data)):
-        X.append(data[i - look_back:i, 0])
-        y.append(data[i, 0])
-    return np.array(X).reshape(len(X), look_back, 1), np.array(y)
+def load_model_safe(path):
+    try:
+        if os.path.exists(path): return load_model(path)
+    except:
+        if os.path.exists(path): os.remove(path)
+    return None
+
+def get_sentiment(ticker_symbol, api_key):
+    try:
+        t = yf.Ticker(ticker_symbol)
+        news = t.news[:5]
+        if not news: return "Neutral"
+        
+        headlines = [n['title'] for n in news]
+        client = Groq(api_key=api_key)
+        prompt = f"Analyze the following news headlines for {ticker_symbol} and return ONLY one word: Bullish, Bearish, or Neutral.\n\n" + "\n".join(headlines)
+        
+        comp = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.1-8b-instant")
+        return comp.choices[0].message.content.strip()
+    except: return "Neutral"
 
 # --- CORE LOGIC ---
 if ticker_input:
     df = load_data(ticker_input)
-    
-    if df is not None and not df.empty:
-        # Preprocessing
-        df_clean = df[['Date', 'Close']].dropna()
-        df_clean['Date'] = pd.to_datetime(df_clean['Date'])
+    if df is not None:
+        df_clean = df[['Close']].dropna()
         today_price = float(df_clean['Close'].iloc[-1])
         
-        # Tabs Layout
-        tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔮 Predictions", "🤖 AI Insights"])
-        
-        with tab1:
-            st.title(f"📈 {ticker_input.upper()} Market Pulse")
-            
-            # Interactive Plotly Chart
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df_clean['Date'], y=df_clean['Close'], name="Close Price", line=dict(color='#00d1ff')))
-            fig.update_layout(template="plotly_dark", height=500, margin=dict(l=0, r=0, t=0, b=0))
+        if page == "📊 Dashboard":
+            st.title(f"📈 {ticker_input} Market Pulse")
+            fig = go.Figure(go.Scatter(x=df_clean.index, y=df_clean['Close'], line=dict(color='#00d1ff')))
+            fig.update_layout(template="plotly_dark", height=500, margin=dict(l=0, r=0, t=20, b=0))
             st.plotly_chart(fig, use_container_width=True)
             
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Current Price", f"₹{float(today_price):.2f}")
-            col2.metric("1Y High", f"₹{float(df_clean['Close'].tail(252).max().item()):.2f}")
-            col3.metric("1Y Low", f"₹{float(df_clean['Close'].tail(252).min().item()):.2f}")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Current", f"₹{today_price:.2f}")
+            c2.metric("1Y High", f"₹{float(df_clean['Close'].tail(252).max().item()):.2f}")
+            c3.metric("1Y Low", f"₹{float(df_clean['Close'].tail(252).min().item()):.2f}")
 
-        with tab2:
-            st.subheader("Deep Learning Forecasts")
+        elif page == "🧠 AI Conclusion":
+            st.title("🧠 Intelligence Hub")
             
-            scaler = MinMaxScaler(feature_range=(0, 1))
-            scaled_data = scaler.fit_transform(df_clean[['Close']].values)
-            look_back = 60
-            
-            # Prediction Models (LSTM/GRU)
-            with st.spinner("Analyzing market patterns..."):
+            with st.spinner("Processing deep analysis..."):
+                # Prediction Logic
+                scaler = MinMaxScaler()
+                scaled = scaler.fit_transform(df_clean.values)
+                X_train = []
+                for i in range(60, len(scaled)): X_train.append(scaled[i-60:i, 0])
+                X_train = np.array(X_train).reshape(-1, 60, 1)
+                y_train = scaled[60:, 0]
+                last_60 = scaled[-60:].reshape(1, 60, 1)
+
                 lstm_path = get_model_path(ticker_input, "lstm")
                 gru_path = get_model_path(ticker_input, "gru")
                 
-                X_train_seq, y_train_seq = create_sequences(scaled_data, look_back)
-                last_60 = np.array([scaled_data[-look_back:]]).reshape(1, look_back, 1)
-
-                # LSTM
-                if os.path.exists(lstm_path):
-                    lstm_model = load_model(lstm_path)
-                else:
-                    lstm_model = Sequential([
-                        LSTM(50, return_sequences=True, input_shape=(look_back, 1)),
-                        Dropout(0.2), LSTM(50), Dropout(0.2), Dense(25), Dense(1)
-                    ])
-                    lstm_model.compile(optimizer='adam', loss='mean_squared_error')
-                    lstm_model.fit(X_train_seq, y_train_seq, epochs=5, batch_size=32, verbose=0)
-                    lstm_model.save(lstm_path)
+                # Self-healing Load
+                m_lstm = load_model_safe(lstm_path)
+                if not m_lstm:
+                    m_lstm = Sequential([LSTM(50, return_sequences=True, input_shape=(60,1)), Dropout(0.2), LSTM(50), Dense(1)])
+                    m_lstm.compile(optimizer='adam', loss='mse')
+                    m_lstm.fit(X_train, y_train, epochs=2, verbose=0)
+                    m_lstm.save(lstm_path)
                 
-                # GRU
-                if os.path.exists(gru_path):
-                    gru_model = load_model(gru_path)
-                else:
-                    gru_model = Sequential([
-                        GRU(50, return_sequences=True, input_shape=(look_back, 1)),
-                        Dropout(0.2), GRU(50), Dropout(0.2), Dense(25), Dense(1)
-                    ])
-                    gru_model.compile(optimizer='adam', loss='mean_squared_error')
-                    gru_model.fit(X_train_seq, y_train_seq, epochs=5, batch_size=32, verbose=0)
-                    gru_model.save(gru_path)
+                m_gru = load_model_safe(gru_path)
+                if not m_gru:
+                    m_gru = Sequential([GRU(50, return_sequences=True, input_shape=(60,1)), Dropout(0.2), GRU(50), Dense(1)])
+                    m_gru.compile(optimizer='adam', loss='mse')
+                    m_gru.fit(X_train, y_train, epochs=2, verbose=0)
+                    m_gru.save(gru_path)
 
-                pred_lstm = float(scaler.inverse_transform(lstm_model.predict(last_60))[0][0])
-                pred_gru = float(scaler.inverse_transform(gru_model.predict(last_60))[0][0])
+                p_lstm = float(scaler.inverse_transform(m_lstm.predict(last_60))[0][0])
+                p_gru = float(scaler.inverse_transform(m_gru.predict(last_60))[0][0])
+                sentiment = get_sentiment(ticker_input, st.session_state.groq_key) if st.session_state.groq_key else "N/A"
 
-            p_col1, p_col2 = st.columns(2)
-            p_col1.metric("LSTM Projection", f"₹{pred_lstm:.2f}", f"{((pred_lstm/today_price)-1)*100:.2f}%")
-            p_col2.metric("GRU Projection", f"₹{pred_gru:.2f}", f"{((pred_gru/today_price)-1)*100:.2f}%")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("LSTM Goal", f"₹{p_lstm:.2f}", f"{((p_lstm/today_price)-1)*100:.2f}%")
+            col2.metric("GRU Goal", f"₹{p_gru:.2f}", f"{((p_gru/today_price)-1)*100:.2f}%")
+            col3.metric("Market Sentiment", sentiment)
 
-        with tab3:
-            st.subheader("Groq AI Financial Advisor")
-            if groq_api_key:
-                if st.button("Generate AI Investment Thesis"):
-                    try:
-                        client = Groq(api_key=groq_api_key)
-                        prompt = f"""
-                        Analyze the stock {ticker_input} with the following data:
-                        - Current Price: {today_price}
-                        - LSTM Predicted Price: {pred_lstm}
-                        - GRU Predicted Price: {pred_gru}
-                        - Historical Trend: Past 1 year high was {df_clean['Close'].tail(252).max()} and low was {df_clean['Close'].tail(252).min()}
-                        
-                        Give a concise investment suggestion (Buy/Sell/Hold) with 3 key reasons. 
-                        Tone: Professional, data-driven.
-                        """
-                        
-                        chat_completion = client.chat.completions.create(
-                            messages=[{"role": "user", "content": prompt}],
-                            model="llama-3.1-8b-instant",
-                        )
-                        st.markdown(chat_completion.choices[0].message.content)
-                    except Exception as e:
-                        st.error(f"AI Error: {str(e)}")
+            st.markdown("---")
+            if st.session_state.groq_key:
+                if st.button("Generate Final Investment Thesis"):
+                    client = Groq(api_key=st.session_state.groq_key)
+                    prompt = f"Stock: {ticker_input}. Context: Price={today_price}, Predictions(LSTM={p_lstm}, GRU={p_gru}), Sentiment={sentiment}. Give a final Buy/Sell/Hold with 3 data points."
+                    res = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.1-8b-instant")
+                    st.info(res.choices[0].message.content)
             else:
-                st.warning("Please enter your Groq API Key in the sidebar.")
+                st.warning("Please configure Groq Key in sidebar.")
 
-
-    else:
-        st.error("Invalid Ticker or No Data Found. Please try another symbol.")
+    else: st.error("Invalid Ticker.")
 else:
-    st.title("Welcome to StockPulse AI")
-    st.markdown("---")
-    st.success("✨ Systems Online | AI Model: Llama-3.1-8b")
-    st.markdown("### Enter a ticker in the sidebar to begin your premium analysis.")
-
-
+    st.info("👈 Enter a ticker symbol in the sidebar to begin.")
